@@ -7,10 +7,8 @@ def BERT_MLP(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
     mask = tf.keras.layers.Input(shape=(MAX_LEN,), name='attention_mask', dtype='int32')
     
     # pretrained model (Transformers)
-    config = AutoConfig.from_pretrained(MODEL_NAME+'/config.json') 
-    backbone = TFAutoModel.from_pretrained(MODEL_NAME+'/tf_model.h5', config=config)
-    
-    # backbone = TFAutoModel.from_pretrained(MODEL_NAME)
+    config = AutoConfig.from_pretrained(MODEL_NAME) 
+    backbone = TFAutoModel.from_pretrained(MODEL_NAME, config=config)
     backbone.trainable = False
     
     # downstream output layer(s)

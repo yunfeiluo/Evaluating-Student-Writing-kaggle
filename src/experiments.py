@@ -21,8 +21,7 @@ if __name__ == '__main__':
     print('labels shape', labels.shape)
 
     # construct model
-    with strategy.scope():
-        model = BERT_MLP(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+    model = BERT_MLP(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
     model.summary()
     
     # TRAIN VALID SPLIT 80% 20%
