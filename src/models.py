@@ -1,13 +1,16 @@
 import tensorflow as tf
 from transformers import *
 
-def BERT_MLP(MAX_LEN=1024):
+def BERT_MLP(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
     # construct input
     input_ids = tf.keras.layers.Input(shape=(MAX_LEN,), name='input_ids', dtype='int32')
     mask = tf.keras.layers.Input(shape=(MAX_LEN,), name='attention_mask', dtype='int32')
     
     # pretrained model (Transformers)
-    backbone = TFAutoModel.from_pretrained("bert-base-cased")
+    config = AutoConfig.from_pretrained(MODEL_NAME+'/config.json') 
+    backbone = TFAutoModel.from_pretrained(MODEL_NAME+'/tf_model.h5', config=config)
+    
+    # backbone = TFAutoModel.from_pretrained(MODEL_NAME)
     backbone.trainable = False
     
     # downstream output layer(s)

@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 from transformers import *
 
-def load_train_data(MAX_LEN=1024):
+def load_train_data(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
     # construct tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     
     # load csv file
-    df = pd.read_csv('data/train.csv')
+    df = pd.read_csv('../input/feedback-prize-2021/train.csv')
     IDS = df.id.unique()
     train_ids = np.zeros((len(IDS), MAX_LEN), dtype='int32')
     train_attention = np.zeros((len(IDS), MAX_LEN), dtype='int32')
@@ -32,14 +32,14 @@ def load_train_data(MAX_LEN=1024):
         'Rebuttal_i': 13,
         'other': 14
     }    
-    train_labels = np.zeros((len(IDS), MAX_LEN, len(label_to_ind)))
+    train_labels = np.zeros((len(IDS), MAX_LEN, len(label_to_ind)), dtype='int32')
     
     # form samples
     for i in range(len(IDS)):
         if i % 1000 == 0:
             print(i)
         # read txt file
-        filename = 'data/train/{}.txt'.format(IDS[i])
+        filename = '../input/feedback-prize-2021/train/{}.txt'.format(IDS[i])
         txt = open(filename, 'r').read()
         words = txt.split()
         
@@ -84,8 +84,15 @@ def load_train_data(MAX_LEN=1024):
     return train_ids, train_attention, train_labels
 
 if __name__ == '__main__':
-    train_ids, train_attention, train_labels = load_train_data()
-    with open('saved/tokenized_data_bert-base-cased.pkl', 'wb') as f:
+    # config
+    MODEL_NAME = "/bert-base-cased"
+    MAX_LEN = 512
+
+    # load data
+    train_ids, train_attention, train_labels = load_train_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+
+    # save data
+    with open('saved/tokenized_data_{}_{}.pkl'.format(MODEL_NAME, MAX_LEN), 'wb') as f:
         saved = {
             'train_ids': train_ids,
             'train_attention': train_attention,
