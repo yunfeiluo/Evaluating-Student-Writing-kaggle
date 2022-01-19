@@ -1,7 +1,7 @@
 import tensorflow as tf
 from transformers import *
 
-def BERT_MLP(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
+def build_model(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
     # construct input
     input_ids = tf.keras.layers.Input(shape=(MAX_LEN,), name='input_ids', dtype='int32')
     mask = tf.keras.layers.Input(shape=(MAX_LEN,), name='attention_mask', dtype='int32')

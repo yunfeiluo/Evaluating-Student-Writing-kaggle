@@ -1,16 +1,45 @@
 import pickle
 
-from data_loader import *
+from utils import *
 from models import *
+from post_processing import *
 
 
 if __name__ == '__main__':
-    # config
-    MODEL_NAME = "/bert-base-cased"
-    MAX_LEN = 512
-    
-    # load data
-    with open('saved/tokenized_data_bert-base-cased.pkl', 'rb') as f:
+    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+
+    # USE MULTIPLE GPUS
+    if os.environ["CUDA_VISIBLE_DEVICES"].count(',') == 0:
+        strategy = tf.distribute.get_strategy()
+        print('single strategy')
+    else:
+        strategy = tf.distribute.MirroredStrategy()
+        print('multiple strategy')
+
+    # ============================== SPLIT_LINE ==================================
+
+    # MODEL_NAME = "bert-base-cased"
+    # MODEL_NAME = "../input/feedbacksaved/BERT" # load from pretrained.
+    # MAX_LEN = 512
+
+    MODEL_NAME = 'allenai/longformer-base-4096'
+    # MODEL_NAME = '../input/feedbacksaved/LongFormer'
+    MAX_LEN = 1024
+    LR=0.25e-4
+
+    # # processing data
+    # train_ids, train_attention, train_labels = load_train_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+
+    # with open('tokenized_data_longformer.pkl', 'wb') as f:
+    #     saved = {
+    #         'train_ids': train_ids,
+    #         'train_attention': train_attention,
+    #         'train_labels': train_labels
+    #     }
+    #     pickle.dump(saved, f)
+
+    # load saved data and build model
+    with open('../input/feedbacksaved/tokenized_data_longformer.pkl', 'rb') as f:
         saved = pickle.load(f)
         ids = saved['train_ids'][:, :MAX_LEN]
         attention = saved['train_attention'][:, :MAX_LEN]
@@ -20,28 +49,60 @@ if __name__ == '__main__':
     print('attention shape', attention.shape)
     print('labels shape', labels.shape)
 
-    # construct model
-    model = BERT_MLP(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
-    model.summary()
+    with strategy.scope():
+        model = build_model(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR)
     
-    # TRAIN VALID SPLIT 80% 20%
-    np.random.seed(42)
-    IDS = pd.read_csv('data/train.csv').id.unique()
-    inds = [i for i in range(len(IDS))]
-    np.random.shuffle(inds)
-    split_point = int(0.8 * len(inds))
-    train_idx = inds[:split_point]
-    val_idx = inds[split_point:]
-    print('Train size',len(train_idx),', Valid size',len(val_idx))
+    # ============================== SPLIT_LINE ==================================
+    
+    # # load trained model if available
+    # model.load_weights('../input/feedbacksaved/models/bert_mlp.h5')
 
-    print('start training...')
-    model.fit(x = [ids[train_idx,], attention[train_idx,]],
-            y = labels[train_idx,],
-            validation_data = ([ids[val_idx,], attention[val_idx,]],
-                                labels[val_idx,]),
-            epochs = 5,
-            batch_size = 32,
-            verbose = 2)
+    # # train-val model
+    # train_val(model, ids, attention, labels, 
+    #           train_size=0.8, 
+    #           epochs=5,
+    #           batch_size=16,
+    #           saved_name='saved_model.h5')
 
-    # SAVE MODEL WEIGHTS
-    model.save_weights('saved/{}_mlp_{}.h5'.format(MODEL_NAME, MAX_LEN))
+    # train on entire training set
+    train_val(model, ids, attention, labels, 
+            train_size=1.0, 
+            epochs=5,
+            batch_size=4,
+            saved_name='{}_entire.h5'.format(MODEL_NAME.split('/')[-1]))
+    
+    # ============================== SPLIT_LINE ==================================
+
+    # MODEL_NAME = "bert-base-cased"
+    # MODEL_NAME = "../input/feedbacksaved/BERT" # load from pretrained.
+    # MAX_LEN = 512
+
+    # MODEL_NAME = 'allenai/longformer-base-4096'
+    MODEL_NAME = '../input/feedbacksaved/LongFormer'
+    MAX_LEN = 1024
+
+    # build and load model
+    with strategy.scope():
+        model = build_model(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+    model.load_weights('../input/feedbacksaved/models/longformer_mlp.h5')
+    print('Model Loading Complete.')
+
+    # load test data
+    test_ids, test_attention, test_IDS = load_test_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+    print('Test Data Loading Complete.')
+
+    # make prediction
+    test_pred = model.predict([test_ids, test_attention], batch_size=16, verbose=2).argmax(axis=-1)
+    print('Prediction Complete.')
+
+    # form word-class map
+    word_label_map = word_to_label('test', test_pred, test_IDS, MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+    print('Word-Class Mapping Complete.')
+
+    # post processing
+    raw_df = form_raw_df(word_label_map)
+    test_res_int = raw_df
+    # test_res_int = post_processing_mode('test', word_label_map)
+
+    # write to file
+    test_res_int.to_csv('submission.csv',index=False)

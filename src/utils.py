@@ -1,7 +1,22 @@
+import os
+import pickle
+
+import numpy as np
 import pandas as pd
 from transformers import *
 
-def form_output(folder, pred, IDS, MODEL_NAME = "bert-base-cased", MAX_LEN=1024):
+# functions for loading and train/val data
+
+def load_train_data(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
+    # construct tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    
+    # load csv file
+    df = pd.read_csv('../input/feedback-prize-2021/train.csv')
+    IDS = df.id.unique()
+    train_ids = np.zeros((len(IDS), MAX_LEN), dtype='int32')
+    train_attention = np.zeros((len(IDS), MAX_LEN), dtype='int32')
+    
     # init labels
     label_to_ind = {
         'Lead_b': 0,
@@ -19,135 +34,127 @@ def form_output(folder, pred, IDS, MODEL_NAME = "bert-base-cased", MAX_LEN=1024)
         'Rebuttal_b': 12,
         'Rebuttal_i': 13,
         'other': 14
-    } 
-    ind_to_label = dict()
-    for key in label_to_ind:
-        ind_to_label[label_to_ind[key]] = key
+    }    
+    train_labels = np.zeros((len(IDS), MAX_LEN, len(label_to_ind)), dtype='int32')
     
-    # construct tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    
-    res = {
-        'id': list(),
-        'class': list(),
-        'predictionstring': list(), # 2D array
-    }
+    # form samples
     for i in range(len(IDS)):
         if i % 1000 == 0:
             print(i)
         # read txt file
-        filename = '../input/feedback-prize-2021/{}/{}.txt'.format(folder, IDS[i])
+        filename = '../input/feedback-prize-2021/train/{}.txt'.format(IDS[i])
         txt = open(filename, 'r').read()
-        total_len = len(txt)
-        words = txt.split()
         
         # tokenize
         tokens = tokenizer.encode_plus(txt, max_length=MAX_LEN, padding='max_length',
                                        truncation=True, return_offsets_mapping=True)
-        token_ids = tokens['input_ids']
+        train_ids[i, :] = tokens['input_ids']
+        train_attention[i, :] = tokens['attention_mask']
         offsets = tokens['offset_mapping']
         
-        # extract segments
-        segments = dict() # map: (start, end) -> label
+        # extract labels for each token
+        curr_df = df.loc[df.id==IDS[i]]
         offset_ind = 0
-        start_ind = 0
-        curr_label = ind_to_label[pred[i, 0]].split('_')[0]
-        while offset_ind < len(token_ids) and token_ids[offset_ind] != 0:
-            # get current token index
-            t_start = offsets[offset_ind][0]
-            t_end = offsets[offset_ind][1]
-            
-            label = ind_to_label[pred[i, offset_ind]].split('_')
-            label_name = label[0]
-            if len(label) > 1:
-                pos = label[1]
-            if label_name != curr_label or offset_ind == len(token_ids) - 1:
-                segments[(start_ind, t_start)] = curr_label
-                start_ind = t_start
-                curr_label = label_name
-            offset_ind += 1
-        
-        # form output
-        curr_ind = 0
-        for seg in segments:
-            res['id'].append(IDS[i])
-            res['class'].append(segments[seg])
-            
-            words = txt[seg[0]:seg[1]].split()
-            pred_str = ' '.join([str(i + curr_ind) for i in range(len(words))])
-            res['predictionstring'].append(pred_str)
-            
-            curr_ind += len(words)
-        
-    return pd.DataFrame(res)
-
-def post_processing(folder, res_df, IDS):
-    res = {
-        'id': list(),
-        'class': list(),
-        'predictionstring': list(), # 2D array
-    }
-    
-    def find_mode_label(arr):
-        label_ct = dict()
-        for label in arr:
-            if label_ct.get(label) == None:
-                label_ct[label] = 1
-            else:
-                label_ct[label] += 1
-        label = sorted(label_ct.items(), key=lambda x: x[1])[-1][0]
-        return label
-    
-    for i in range(len(IDS)):
-#         if i % 1 == 0:
-#             print(i)
-        
-        # construct labels array
-        labels = list()
-        curr_df = res_df.loc[res_df.id == IDS[i]]
         for index,row in curr_df.iterrows():
-            pred_str = row.predictionstring.split()
-            if len(pred_str) < 1:
-                continue
+            label = row.discourse_type + '_b'
             
-            label = row['class']
-            for s in pred_str:
-                labels.append(label)
-        
-        # read txt file
-        filename = '../input/feedback-prize-2021/{}/{}.txt'.format(folder, IDS[i])
-        txt = open(filename, 'r').read().split()
-        
-        ending = ['.', '!', '?']
-        sent_start_ind = 0
-        curr_sentence = list()
-        for j in range(len(txt)):
-            if j >= len(labels):
+            w_start = row.discourse_start
+            w_end = row.discourse_end
+            
+            if offset_ind >= len(offsets):
                 break
             
-            word = txt[j]
-            if word[-1] not in ending:
-                curr_sentence.append(labels[j])
-            else:
-                curr_sentence.append(labels[j])
-                label = find_mode_label(curr_sentence)
+            # set labels
+            t_start = offsets[offset_ind][0]
+            while w_end > t_start:
+                # exit condition
+                if offset_ind >= len(offsets):
+                    break
                 
-                if len(res['id']) > 0 and IDS[i] == res['id'][-1] and label == res['class'][-1]:
-                    res['predictionstring'][-1] += ' ' + ' '.join([str(k+sent_start_ind) for k in range(len(curr_sentence))])
-                else:
-                    res['id'].append(IDS[i])
-                    res['class'].append(label)
-                    res['predictionstring'].append(' '.join([str(k+sent_start_ind) for k in range(len(curr_sentence))]))
+                # get current token index
+                t_start = offsets[offset_ind][0]
+                t_end = offsets[offset_ind][1]
                 
-                sent_start_ind += len(curr_sentence)
-                curr_sentence = list()
-        if len(curr_sentence) > 0:
-            label = find_mode_label(curr_sentence)
-            
-            if len(res['id']) > 0 and label == res['class'][-1]:
-                res['predictionstring'][-1] += ' ' + ' '.join([str(k+sent_start_ind) for k in range(len(curr_sentence))])
-            else:
-                res['id'].append(res['id'][-1])
-                res['class'].append(label)
-                res['predictionstring'].append(' '.join([str(k+sent_start_ind) for k in range(len(curr_sentence))]))
-    return pd.DataFrame(res)
+                # set label if within range
+                if t_end <= w_end:
+                    train_labels[i, offset_ind, label_to_ind[label]] = 1
+                    label = row.discourse_type + '_i'
+                
+                # update global var(s)
+                offset_ind += 1
+    train_labels[:, :, 14] = 1 - np.max(train_labels, axis=-1)
+    return train_ids, train_attention, train_labels
+
+def load_test_data(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
+    # construct tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    
+    IDS = os.listdir('../input/feedback-prize-2021/test')
+    IDS = [i.split('.')[0] for i in IDS]
+    test_ids = np.zeros((len(IDS), MAX_LEN), dtype='int32')
+    test_attention = np.zeros((len(IDS), MAX_LEN), dtype='int32')
+    
+    # form samples
+    for i in range(len(IDS)):
+        if i % 1000 == 0:
+            print(i)
+        # read txt file
+        filename = '../input/feedback-prize-2021/test/{}.txt'.format(IDS[i])
+        txt = open(filename, 'r').read()
+        
+        # tokenize
+        tokens = tokenizer.encode_plus(txt, max_length=MAX_LEN, padding='max_length',
+                                       truncation=True, return_offsets_mapping=True)
+        test_ids[i, :] = tokens['input_ids']
+        test_attention[i, :] = tokens['attention_mask']
+    
+    return test_ids, test_attention, IDS
+
+def train_val(model, ids, attention, labels, 
+              train_size=0.8, 
+              epochs=5,
+              batch_size=32,
+              saved_name='saved_model.h5'
+             ):
+    # TRAIN VALID SPLIT 80% 20%
+    np.random.seed(42)
+    IDS = pd.read_csv('../input/feedback-prize-2021/train.csv').id.unique()
+    inds = [i for i in range(len(IDS))]
+    np.random.shuffle(inds)
+    split_point = int(train_size * len(inds))
+    train_idx = inds[:split_point]
+    val_idx = inds[split_point:]
+    print('Train size',len(train_idx),', Valid size',len(val_idx))
+
+    print('start training...')
+    model.fit(x = [ids[train_idx,], attention[train_idx,]],
+              y = labels[train_idx,],
+              validation_data = ([ids[val_idx,], attention[val_idx,]],
+                                 labels[val_idx,]),
+              epochs = epochs,
+              batch_size = batch_size,
+              verbose = 2)
+
+    # SAVE MODEL WEIGHTS
+    model.save_weights(saved_name)
+
+if __name__ == '__main__':
+    # # config
+    # MODEL_NAME = "bert-base-cased"
+    # MODEL_NAME = "../input/feedbacksaved/BERT" # load from pretrained.
+    # MAX_LEN = 512
+
+    MODEL_NAME = 'allenai/longformer-base-4096'
+    # MODEL_NAME = '../input/feedbacksaved/LongFormer'
+    MAX_LEN = 1024
+
+    # processing data
+    train_ids, train_attention, train_labels = load_train_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+
+    with open('tokenized_data_longformer.pkl', 'wb') as f:
+        saved = {
+            'train_ids': train_ids,
+            'train_attention': train_attention,
+            'train_labels': train_labels
+        }
+        pickle.dump(saved, f)
