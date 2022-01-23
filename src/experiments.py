@@ -95,14 +95,7 @@ if __name__ == '__main__':
     test_pred = model.predict([test_ids, test_attention], batch_size=16, verbose=2).argmax(axis=-1)
     print('Prediction Complete.')
 
-    # form word-class map
-    word_label_map = word_to_label('test', test_pred, test_IDS, MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
-    print('Word-Class Mapping Complete.')
-
-    # post processing
-    raw_df = form_raw_df(word_label_map)
-    test_res_int = raw_df
-    # test_res_int = post_processing_mode('test', word_label_map)
+    test_res_int = get_preds(dataset='test', verbose=False, text_ids=test_IDS, preds=test_pred)
 
     # write to file
     test_res_int.to_csv('submission.csv',index=False)
