@@ -1,8 +1,10 @@
 import pandas as pd
+import numpy as np
 from transformers import *
 
 # =====================================================================
-def get_preds(dataset='train', verbose=True, text_ids=None, preds=None):
+# =====================================================================
+def get_preds(dataset='train', verbose=True, text_ids=None, preds=None, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
     target_map_rev = {0: 'Lead', 1: 'Position', 2: 'Evidence', 3: 'Claim', 4: 'Concluding Statement', 5: 'Counterclaim', 6: 'Rebuttal', 7: 'blank'}
     
     # construct tokenizer
@@ -67,4 +69,3 @@ def get_preds(dataset='train', verbose=True, text_ids=None, preds=None):
     df = pd.DataFrame(all_predictions)
     df.columns = ['id', 'class', 'predictionstring']
     return df
-        

@@ -1,25 +1,49 @@
-import tensorflow as tf
+import torch
+import torch.nn as nn
 from transformers import *
 
-def build_model(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
-    # construct input
-    input_ids = tf.keras.layers.Input(shape=(MAX_LEN,), name='input_ids', dtype='int32')
-    mask = tf.keras.layers.Input(shape=(MAX_LEN,), name='attention_mask', dtype='int32')
-    
-    # pretrained model (Transformers)
-    config = AutoConfig.from_pretrained(MODEL_NAME)
-    backbone = TFAutoModel.from_pretrained(MODEL_NAME, config=config)
-    backbone.trainable = False
-    
-    # downstream output layer(s)
-    x = backbone(input_ids, attention_mask=mask)
-    x = tf.keras.layers.Dense(256, activation='relu')(x[0])
-    x = tf.keras.layers.Dense(15, activation='softmax', dtype='float32')(x)
-    
-    # integration
-    model = tf.keras.Model(inputs=[input_ids,mask], outputs=x)
-    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate = 1e-4),
-                  loss = [tf.keras.losses.CategoricalCrossentropy()],
-                  metrics = [tf.keras.metrics.CategoricalAccuracy()])
-    
+# connection port
+def build_model():
+    model = LongFormer() # baseline
     return model
+
+# Models Declaration
+class LongFormer(nn.Module):
+    def __init__(self, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
+        self.MAX_LEN = MAX_LEN
+
+        # pretrained model (Transformers)
+        config = AutoConfig.from_pretrained(MODEL_NAME)
+        backbone = AutoModel.from_pretrained(MODEL_NAME, config=config)
+        
+        # freeze or not the parameters for backbone
+        for param in backbone.parameters():
+            param.requires_grad = True # True for fine-tune, False for pre-train
+        
+        # output head
+        self.out_fc = nn.Sequential(
+            nn.Linear(768, 256),
+            nn.ReLU(),
+            nn.Linear(256, 15)
+        )
+
+        # loss function
+        self.loss_func = nn.CrossEntropyLoss()
+    
+    def forward(self, input_pack):
+        # unpack
+        input_ids = input_pack['input_ids']
+        mask = input_pack['attention_mask']
+
+        # forward
+        out = self.backbone(input_ids, attention_mask=mask)
+        return self.out_fc(out)
+    
+    def loss(self, input_pack, target_pack):
+        # forwawrd
+        out = self.forward(input_pack)
+
+        # unpack and compute objective function
+        labels = target_pack['labels']
+        obj = self.loss_func(out, labels)
+        return obj

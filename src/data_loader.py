@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from transformers import *
 
-def load_train_data(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
+def load_train_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
     # construct tokenizer
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     
@@ -85,7 +85,7 @@ def load_train_data(MODEL_NAME="bert-base-cased", MAX_LEN=1024):
 
 if __name__ == '__main__':
     # config
-    MODEL_NAME = "/bert-base-cased"
+    MODEL_NAME = "allenai/longformer-base-4096"
     MAX_LEN = 512
 
     # load data

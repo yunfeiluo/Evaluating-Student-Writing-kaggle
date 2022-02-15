@@ -6,21 +6,15 @@ from post_processing import *
 
 
 if __name__ == '__main__':
-    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+    # use gpu if available
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    print('device:', device)
 
-    # USE MULTIPLE GPUS
-    if os.environ["CUDA_VISIBLE_DEVICES"].count(',') == 0:
-        strategy = tf.distribute.get_strategy()
-        print('single strategy')
-    else:
-        strategy = tf.distribute.MirroredStrategy()
-        print('multiple strategy')
+    # config
+    batch_size = 32
+    epochs = 30
 
     # ============================== SPLIT_LINE ==================================
-
-    # MODEL_NAME = "bert-base-cased"
-    # MODEL_NAME = "../input/feedbacksaved/BERT" # load from pretrained.
-    # MAX_LEN = 512
 
     MODEL_NAME = 'allenai/longformer-base-4096'
     # MODEL_NAME = '../input/feedbacksaved/LongFormer'
@@ -49,9 +43,7 @@ if __name__ == '__main__':
     print('attention shape', attention.shape)
     print('labels shape', labels.shape)
 
-    with strategy.scope():
-        model = build_model(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR)
-    
+    model = build_model()
     # ============================== SPLIT_LINE ==================================
     
     # # load trained model if available
@@ -73,17 +65,12 @@ if __name__ == '__main__':
     
     # ============================== SPLIT_LINE ==================================
 
-    # MODEL_NAME = "bert-base-cased"
-    # MODEL_NAME = "../input/feedbacksaved/BERT" # load from pretrained.
-    # MAX_LEN = 512
-
     # MODEL_NAME = 'allenai/longformer-base-4096'
     MODEL_NAME = '../input/feedbacksaved/LongFormer'
     MAX_LEN = 1024
 
     # build and load model
-    with strategy.scope():
-        model = build_model(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
+    model = build_model()
     model.load_weights('../input/feedbacksaved/models/longformer_mlp.h5')
     print('Model Loading Complete.')
 
