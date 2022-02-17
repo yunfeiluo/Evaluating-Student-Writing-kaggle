@@ -4,12 +4,17 @@ from utils import *
 from models import *
 from post_processing import *
 
-from torch.utils.data import DataLoader
-
 if __name__ == '__main__':
     # use gpu if available
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    print('device:', device)
+    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+
+    # USE MULTIPLE GPUS
+    if os.environ["CUDA_VISIBLE_DEVICES"].count(',') == 0:
+        strategy = tf.distribute.get_strategy()
+        print('single strategy')
+    else:
+        strategy = tf.distribute.MirroredStrategy()
+        print('multiple strategy')
 
     # ============================== SPLIT_LINE ==================================
 
@@ -22,79 +27,55 @@ if __name__ == '__main__':
     EPOCHS = 5
 
     # processing data
-    train_dataset, val_dataset = load_train_data(
-        val_size=0.2,
-        MODEL_NAME=MODEL_NAME, 
-        MAX_LEN=MAX_LEN,
-        )
+    ids, attention, labels = load_train_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
 
-    with open('train_val_dataset_longformer.pkl', 'wb') as f:
+    with open('tokenized_data_longformer.pkl', 'wb') as f:
         saved = {
-            'train_dataset': train_dataset,
-            'val_dataset': val_dataset,
+            'train_ids': train_ids,
+            'train_attention': train_attention,
+            'train_labels': train_labels
         }
         pickle.dump(saved, f)
-    
+
     # # load saved data and build model
-    # with open('train_val_dataset_longformer.pkl', 'rb') as f:
+    # with open('../input/feedbacksaved/tokenized_data_longformer.pkl', 'rb') as f:
     #     saved = pickle.load(f)
-    #     train_dataset = saved['train_dataset']
-    #     val_dataset = saved['val_dataset']
-    
-    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    if val_dataset is not None:
-        val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-    else:
-        val_dataloader = list()
+    #     ids = saved['train_ids'][:, :MAX_LEN]
+    #     attention = saved['train_attention'][:, :MAX_LEN]
+    #     labels = saved['train_labels'][:, :MAX_LEN, :]
+
+    print('input seq shape', ids.shape)
+    print('attention shape', attention.shape)
+    print('labels shape', labels.shape)
 
     # construct model
-    model = build_model().to(device)
-    print('Num params:', sum(p.numel() for p in model.parameters() if p.requires_grad))
-    # # load trained model if available
-    # model.load_state_dict(torch.load(PATH))
-
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=LR,
-    #     momentum=0.9, 
-    #     nesterov=True
-    )
+    with strategy.scope():
+        model = build_model(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR)
+    print(model.summary())
     
     # ============================== SPLIT_LINE ==================================
 
-    # train on entire training set
-    train_val(
-        model,
-        optimizer,
-        train_dataloader,
-        val_dataloader,
-        device,
-        epochs=EPOCHS,
-        verbose=True
-    )
+    # TRAIN VALID SPLIT 80% 20%
+    train_size = 0.8
 
-    torch.save(model.state_dict(), 'saved_trained.model')
+    # split dataset
+    np.random.seed(42)
+    inds = [i for i in range(len(ids))]
+    np.random.shuffle(inds)
+    split_point = int(train_size * len(inds))
+    train_idx = inds[:split_point]
+    val_idx = inds[split_point:]
+    print('Train size',len(train_idx),', Valid size',len(val_idx))
+
+    print('start training...')
+    model.fit(x = [ids[train_idx,], attention[train_idx,]],
+              y = [labels[train_idx,], labels[train_idx,]], # custom labels
+              validation_data = ([ids[val_idx,], attention[val_idx,]],
+                                 [labels[val_idx,], labels[val_idx,]]),
+              epochs = EPOCHS,
+              batch_size = BATCH_SIZE,
+              verbose = 2)
+
+    # SAVE MODEL WEIGHTS
+    model.save_weights('saved_model.h5')
     
-    # ============================== SPLIT_LINE ==================================
-
-    # # MODEL_NAME = 'allenai/longformer-base-4096'
-    # MODEL_NAME = '../input/feedbacksaved/LongFormer'
-    # MAX_LEN = 1024
-
-    # # build and load model
-    # model = build_model()
-    # model.load_weights('../input/feedbacksaved/models/longformer_mlp.h5')
-    # print('Model Loading Complete.')
-
-    # # load test data
-    # test_ids, test_attention, test_IDS = load_test_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
-    # print('Test Data Loading Complete.')
-
-    # # make prediction
-    # test_pred = model.predict([test_ids, test_attention], batch_size=16, verbose=2).argmax(axis=-1)
-    # print('Prediction Complete.')
-
-    # test_res_int = get_preds(dataset='test', verbose=False, text_ids=test_IDS, preds=test_pred)
-
-    # # write to file
-    # test_res_int.to_csv('submission.csv',index=False)

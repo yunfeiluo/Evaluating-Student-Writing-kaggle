@@ -1,59 +1,45 @@
-import torch
-import torch.nn as nn
 from transformers import *
+import tensorflow as tf
 
 # connection port
-def build_model(MODEL_NAME="allenai/longformer-base-4096"):
-    model = LongFormer(MODEL_NAME=MODEL_NAME) # baseline
+def build_model(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
+    model = LongFormer(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
     return model
 
-# Models Declaration
-class LongFormer(nn.Module):
-    def __init__(self, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
-        super().__init__()
-        self.MAX_LEN = MAX_LEN
-
-        # pretrained model (Transformers)
-        config = AutoConfig.from_pretrained(MODEL_NAME)
-        config.update({'output_hidden_states':False})
-        self.backbone = AutoModel.from_pretrained(MODEL_NAME, config=config)
-        
-        # freeze or not the parameters for backbone
-        for param in self.backbone.parameters():
-            param.requires_grad = False # True for fine-tune, False for pre-train
-        
-        # output head
-        self.out_fc = nn.Sequential(
-            nn.Linear(768, 256),
-            nn.ReLU(),
-            nn.Linear(256, 15)
-        )
-
-        # loss function
-        self.loss_func = nn.CrossEntropyLoss()
+# define models
+def LongFormer(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
+    # construct input
+    input_ids = tf.keras.layers.Input(shape=(MAX_LEN,), name='input_ids', dtype='int32')
+    mask = tf.keras.layers.Input(shape=(MAX_LEN,), name='attention_mask', dtype='int32')
     
-    def forward(self, input_pack):
-        # unpack
-        input_ids = input_pack['input_ids']
-        mask = input_pack['attention_mask']
-
-        # forward
-        out = self.backbone(input_ids, attention_mask=mask)['last_hidden_state']
-        return self.out_fc(out)
+    # pretrained/finetuned model (Transformers)
+    config = AutoConfig.from_pretrained(MODEL_NAME)
+    backbone = TFAutoModel.from_pretrained(MODEL_NAME, config=config)
+    backbone.trainable = True
     
-    def loss(self, input_pack):
-        # forwawrd
-        out = self.forward(input_pack).view(-1, 15)
-
-        # unpack and compute objective function
-        labels = input_pack['labels'].argmax(dim=2).view(-1).squeeze()
-        obj = self.loss_func(out, labels)
-        return obj
+#     # save the model
+#     os.mkdir('model')
+#     backbone.save_pretrained('model')
+#     config.save_pretrained('model')
+#     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+#     tokenizer.save_pretrained('model')
     
-    def predict(self, input_pack):
-        if input_pack.get('labels') == None:
-            y_true = list()
-        else:
-            y_true = input_pack['labels'].argmax(dim=2).squeeze()
-        y_pred = self.forward(input_pack).argmax(dim=2).squeeze()
-        return y_pred, y_true
+    # downstream output layer(s)
+    out = backbone(input_ids, attention_mask=mask)
+    out = tf.keras.layers.Dense(256, activation='relu')(out[0])
+    out1 = tf.keras.layers.Dense(15, activation='softmax', dtype='float32')(out)
+    out2 = tf.keras.layers.Dense(15, activation='softmax', dtype='float32')(out)
+    output = [out1, out2]
+    
+    # define loss
+    loss1 = lambda x, y: 1.0 * tf.keras.losses.CategoricalCrossentropy()(x, y)
+    loss2 = lambda x, y: 1.0 * tf.keras.losses.CategoricalCrossentropy()(x, y)
+    loss = [loss1, loss2]
+    
+    # integration
+    model = tf.keras.Model(inputs=[input_ids,mask], outputs=output)
+    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate = LR),
+                  loss = loss,
+                  metrics = [tf.keras.metrics.CategoricalAccuracy()])
+    
+    return model

@@ -5,27 +5,9 @@ import numpy as np
 import pandas as pd
 from transformers import *
 
-from torch.utils.data import DataLoader, Dataset
+# functions for loading and train/val data
 
-class FeedbackDataset(Dataset):
-    def __init__(self, samples, mask, labels):
-        self.samples = samples
-        self.masks = mask
-        self.labels = labels
-    
-    def __len__(self):
-        return len(self.samples)
-    
-    def __getitem__(self, idx):
-        data_pack = {
-            'input_ids': self.samples[idx],
-            'attention_mask': self.masks[idx],
-            'labels': self.labels[idx],
-        }
-
-        return data_pack
-
-def load_train_data(val_size=0, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
+def load_train_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
     # construct tokenizer
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     
@@ -62,7 +44,6 @@ def load_train_data(val_size=0, MODEL_NAME="allenai/longformer-base-4096", MAX_L
         # read txt file
         filename = '../input/feedback-prize-2021/train/{}.txt'.format(IDS[i])
         txt = open(filename, 'r').read()
-        words = txt.split()
         
         # tokenize
         tokens = tokenizer.encode_plus(txt, max_length=MAX_LEN, padding='max_length',
@@ -102,25 +83,9 @@ def load_train_data(val_size=0, MODEL_NAME="allenai/longformer-base-4096", MAX_L
                 # update global var(s)
                 offset_ind += 1
     train_labels[:, :, 14] = 1 - np.max(train_labels, axis=-1)
+    return train_ids, train_attention, train_labels
 
-    # construct dataset object
-    if val_size == 0:
-        train_dataset = FeedbackDataset(samples=train_ids, mask=train_attention, labels=train_labels)
-        return train_dataset, None
-    
-    inds = [i for i in range(len(train_ids))]
-    np.random.seed(42)
-    np.random.shuffle(inds)
-    split_ind = int(len(inds) * val_size)
-    train_inds = inds[split_ind:]
-    val_inds = inds[:split_ind]
-
-    train_dataset = FeedbackDataset(samples=train_ids[train_inds], mask=train_attention[train_inds], labels=train_labels[train_inds])
-    val_dataset = FeedbackDataset(samples=train_ids[val_inds], mask=train_attention[val_inds], labels=train_labels[val_inds])
-    
-    return train_dataset, val_dataset
-
-def load_test_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, batch_size=4):
+def load_test_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
     # construct tokenizer
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     
@@ -143,23 +108,5 @@ def load_test_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, batc
         test_ids[i, :] = tokens['input_ids']
         test_attention[i, :] = tokens['attention_mask']
     
-    test_dataset = FeedbackDataset(samples=train_ids, mask=train_attention, labels=train_labels)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False) # change shuflle here if do not wanna shuffle
-    return test_dataloader, IDS
-
-if __name__ == '__main__':
-    # config
-    MODEL_NAME = "allenai/longformer-base-4096"
-    MAX_LEN = 1024
-
-    # load data
-    train_ids, train_attention, train_labels = load_train_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)
-
-    # save data
-    with open('saved/tokenized_data_{}_{}.pkl'.format(MODEL_NAME, MAX_LEN), 'wb') as f:
-        saved = {
-            'train_ids': train_ids,
-            'train_attention': train_attention,
-            'train_labels': train_labels
-        }
-        pickle.dump(saved, f)
+    return test_ids, test_attention, IDS
+    
