@@ -1,10 +1,31 @@
+import os
 import pickle
 
 import numpy as np
 import pandas as pd
 from transformers import *
 
-def load_train_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
+from torch.utils.data import DataLoader, Dataset
+
+class FeedbackDataset(Dataset):
+    def __init__(self, samples, mask, labels):
+        self.samples = samples
+        self.masks = mask
+        self.labels = labels
+    
+    def __len__(self):
+        return len(self.samples)
+    
+    def __getitem__(self, idx):
+        data_pack = {
+            'input_ids': self.samples[idx],
+            'attention_mask': self.masks[idx],
+            'labels': self.labels[idx],
+        }
+
+        return data_pack
+
+def load_train_data(batch_size=4, val_size=0, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
     # construct tokenizer
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     
@@ -81,12 +102,59 @@ def load_train_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
                 # update global var(s)
                 offset_ind += 1
     train_labels[:, :, 14] = 1 - np.max(train_labels, axis=-1)
-    return train_ids, train_attention, train_labels
+
+    # construct dataset object
+    if val_size == 0:
+        train_dataset = FeedbackDataset(samples=train_ids, mask=train_attention, labels=train_labels)
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True) # change shuflle here if do not wanna shuffle
+        return train_dataloader, list()
+    
+    inds = [i for i in range(len(train_ids))]
+    np.random.seed(42)
+    np.random.shuffle(inds)
+    split_ind = int(len(inds) * val_size)
+    train_inds = inds[split_ind:]
+    val_inds = inds[:split_ind]
+
+    train_dataset = FeedbackDataset(samples=train_ids[train_inds], mask=train_attention[train_inds], labels=train_labels[train_inds])
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True) # change shuflle here if do not wanna shuffle
+    
+    val_dataset = FeedbackDataset(samples=train_ids[val_inds], mask=train_attention[val_inds], labels=train_labels[val_inds])
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    
+    return train_dataloader, val_dataloader
+
+def load_test_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, batch_size=4):
+    # construct tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    
+    IDS = os.listdir('../input/feedback-prize-2021/test')
+    IDS = [i.split('.')[0] for i in IDS]
+    test_ids = np.zeros((len(IDS), MAX_LEN), dtype='int32')
+    test_attention = np.zeros((len(IDS), MAX_LEN), dtype='int32')
+    
+    # form samples
+    for i in range(len(IDS)):
+        if i % 1000 == 0:
+            print(i)
+        # read txt file
+        filename = '../input/feedback-prize-2021/test/{}.txt'.format(IDS[i])
+        txt = open(filename, 'r').read()
+        
+        # tokenize
+        tokens = tokenizer.encode_plus(txt, max_length=MAX_LEN, padding='max_length',
+                                       truncation=True, return_offsets_mapping=True)
+        test_ids[i, :] = tokens['input_ids']
+        test_attention[i, :] = tokens['attention_mask']
+    
+    test_dataset = FeedbackDataset(samples=train_ids, mask=train_attention, labels=train_labels)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False) # change shuflle here if do not wanna shuffle
+    return test_dataloader, IDS
 
 if __name__ == '__main__':
     # config
     MODEL_NAME = "allenai/longformer-base-4096"
-    MAX_LEN = 512
+    MAX_LEN = 1024
 
     # load data
     train_ids, train_attention, train_labels = load_train_data(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN)

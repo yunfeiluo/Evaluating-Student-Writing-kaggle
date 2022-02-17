@@ -39,11 +39,19 @@ class LongFormer(nn.Module):
         out = self.backbone(input_ids, attention_mask=mask)
         return self.out_fc(out)
     
-    def loss(self, input_pack, target_pack):
+    def loss(self, input_pack):
         # forwawrd
         out = self.forward(input_pack)
 
         # unpack and compute objective function
-        labels = target_pack['labels']
+        labels = input_pack['labels']
         obj = self.loss_func(out, labels)
         return obj
+    
+    def predict(self, input_pack):
+        if input_pack.get('labels') == None:
+            y_true = list()
+        else:
+            y_true = input_pack['labels'].argmax(dim=2).squeeze()
+        y_pred = self.forward(input_pack).argmax(dim=2).squeeze()
+        return y_pred, y_true
