@@ -4,6 +4,7 @@ from utils import *
 from models import *
 from post_processing import *
 
+from torch.utils.data import DataLoader
 
 if __name__ == '__main__':
     # use gpu if available
@@ -21,29 +22,36 @@ if __name__ == '__main__':
     EPOCHS = 5
 
     # processing data
-    train_dataloader, val_dataloader = load_train_data(
-        batch_size=BATCH_SIZE,
+    train_dataset, val_dataset = load_train_data(
         val_size=0.2,
         MODEL_NAME=MODEL_NAME, 
         MAX_LEN=MAX_LEN,
         )
 
-    with open('train_val_loader_longformer.pkl', 'wb') as f:
+    with open('train_val_dataset_longformer.pkl', 'wb') as f:
         saved = {
-            'train_dataloader': train_dataloader,
-            'val_dataloader': val_dataloader,
+            'train_dataset': train_dataset,
+            'val_dataset': val_dataset,
         }
         pickle.dump(saved, f)
-
+    
     # # load saved data and build model
-    # with open('train_val_loader_longformer.pkl', 'rb') as f:
+    # with open('train_val_dataset_longformer.pkl', 'rb') as f:
     #     saved = pickle.load(f)
-    #     train_dataloader = saved['train_dataloader']
-    #     val_dataloader = saved['val_dataloader']
+    #     train_dataset = saved['train_dataset']
+    #     val_dataset = saved['val_dataset']
+    
+    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    if val_dataset is not None:
+        val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    else:
+        val_dataloader = list()
 
     # construct model
     model = build_model()
     print('Num params:', sum(p.numel() for p in model.parameters() if p.requires_grad))
+    # # load trained model if available
+    # model.load_state_dict(torch.load(PATH))
     
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -53,16 +61,6 @@ if __name__ == '__main__':
     )
     
     # ============================== SPLIT_LINE ==================================
-    
-    # # load trained model if available
-    # model.load_weights('../input/feedbacksaved/models/bert_mlp.h5')
-
-    # # train-val model
-    # train_val(model, ids, attention, labels, 
-    #           train_size=0.8, 
-    #           epochs=5,
-    #           batch_size=16,
-    #           saved_name='saved_model.h5')
 
     # train on entire training set
     train_val(
@@ -74,6 +72,8 @@ if __name__ == '__main__':
         epochs=EPOCHS,
         verbose=True
     )
+
+    torch.save(model.state_dict(), 'saved_trained.model')
     
     # ============================== SPLIT_LINE ==================================
 

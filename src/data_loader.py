@@ -25,7 +25,7 @@ class FeedbackDataset(Dataset):
 
         return data_pack
 
-def load_train_data(batch_size=4, val_size=0, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
+def load_train_data(val_size=0, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
     # construct tokenizer
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     
@@ -106,8 +106,7 @@ def load_train_data(batch_size=4, val_size=0, MODEL_NAME="allenai/longformer-bas
     # construct dataset object
     if val_size == 0:
         train_dataset = FeedbackDataset(samples=train_ids, mask=train_attention, labels=train_labels)
-        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True) # change shuflle here if do not wanna shuffle
-        return train_dataloader, list()
+        return train_dataset, None
     
     inds = [i for i in range(len(train_ids))]
     np.random.seed(42)
@@ -117,12 +116,9 @@ def load_train_data(batch_size=4, val_size=0, MODEL_NAME="allenai/longformer-bas
     val_inds = inds[:split_ind]
 
     train_dataset = FeedbackDataset(samples=train_ids[train_inds], mask=train_attention[train_inds], labels=train_labels[train_inds])
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True) # change shuflle here if do not wanna shuffle
-    
     val_dataset = FeedbackDataset(samples=train_ids[val_inds], mask=train_attention[val_inds], labels=train_labels[val_inds])
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
-    return train_dataloader, val_dataloader
+    return train_dataset, val_dataset
 
 def load_test_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, batch_size=4):
     # construct tokenizer
