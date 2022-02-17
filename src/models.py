@@ -3,22 +3,24 @@ import torch.nn as nn
 from transformers import *
 
 # connection port
-def build_model():
-    model = LongFormer() # baseline
+def build_model(MODEL_NAME="allenai/longformer-base-4096"):
+    model = LongFormer(MODEL_NAME=MODEL_NAME) # baseline
     return model
 
 # Models Declaration
 class LongFormer(nn.Module):
     def __init__(self, MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
+        super().__init__()
         self.MAX_LEN = MAX_LEN
 
         # pretrained model (Transformers)
         config = AutoConfig.from_pretrained(MODEL_NAME)
-        backbone = AutoModel.from_pretrained(MODEL_NAME, config=config)
+        config.update({'output_hidden_states':False})
+        self.backbone = AutoModel.from_pretrained(MODEL_NAME, config=config)
         
         # freeze or not the parameters for backbone
-        for param in backbone.parameters():
-            param.requires_grad = True # True for fine-tune, False for pre-train
+        for param in self.backbone.parameters():
+            param.requires_grad = False # True for fine-tune, False for pre-train
         
         # output head
         self.out_fc = nn.Sequential(
@@ -36,15 +38,15 @@ class LongFormer(nn.Module):
         mask = input_pack['attention_mask']
 
         # forward
-        out = self.backbone(input_ids, attention_mask=mask)
+        out = self.backbone(input_ids, attention_mask=mask)['last_hidden_state']
         return self.out_fc(out)
     
     def loss(self, input_pack):
         # forwawrd
-        out = self.forward(input_pack)
+        out = self.forward(input_pack).view(-1, 15)
 
         # unpack and compute objective function
-        labels = input_pack['labels']
+        labels = input_pack['labels'].argmax(dim=2).view(-1).squeeze()
         obj = self.loss_func(out, labels)
         return obj
     

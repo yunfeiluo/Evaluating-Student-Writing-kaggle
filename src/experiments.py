@@ -48,11 +48,11 @@ if __name__ == '__main__':
         val_dataloader = list()
 
     # construct model
-    model = build_model()
+    model = build_model().to(device)
     print('Num params:', sum(p.numel() for p in model.parameters() if p.requires_grad))
     # # load trained model if available
     # model.load_state_dict(torch.load(PATH))
-    
+
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=LR,
