@@ -52,6 +52,10 @@ if __name__ == '__main__':
     with strategy.scope():
         model = build_model(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR)
     print(model.summary())
+
+    # construct labels
+    coarse_labels = coarse_class(labels)
+    binary_labels = binary_class(labels)
     
     # ============================== SPLIT_LINE ==================================
 
@@ -67,11 +71,16 @@ if __name__ == '__main__':
     val_idx = inds[split_point:]
     print('Train size',len(train_idx),', Valid size',len(val_idx))
 
+    val_labels = [labels[val_idx,]]
+    # val_labels = [labels[val_idx,], coarse_labels[val_idx,]]
+    # val_labels = [labels[val_idx,], binary_labels[val_idx,]]
+    # val_labels = [labels[val_idx,], coarse_labels[val_idx,], binary_labels[val_idx,]]
+
     print('start training...')
     model.fit(x = [ids[train_idx,], attention[train_idx,]],
               y = [labels[train_idx,], labels[train_idx,]], # custom labels
               validation_data = ([ids[val_idx,], attention[val_idx,]],
-                                 [labels[val_idx,], labels[val_idx,]]),
+                                 val_labels),
               epochs = EPOCHS,
               batch_size = BATCH_SIZE,
               verbose = 2)

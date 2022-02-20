@@ -1,43 +1,25 @@
+import os
+
+import numpy as np
 from transformers import *
 import tensorflow as tf
-import numpy as np
 
-# connection port
-def build_model(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
-    model = LongFormer(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
-    model = LongFormerMultitask(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
-    return model
-
-# define models
-def LongFormer(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
-    # construct input
-    input_ids = tf.keras.layers.Input(shape=(MAX_LEN,), name='input_ids', dtype='int32')
-    mask = tf.keras.layers.Input(shape=(MAX_LEN,), name='attention_mask', dtype='int32')
-    
-    # pretrained/finetuned model (Transformers)
+def download_save_model(MODEL_NAME="allenai/longformer-base-4096"):
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     config = AutoConfig.from_pretrained(MODEL_NAME)
     backbone = TFAutoModel.from_pretrained(MODEL_NAME, config=config)
     backbone.trainable = True
     
-#     # save the model
-#     os.mkdir('model')
-#     backbone.save_pretrained('model')
-#     config.save_pretrained('model')
-#     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-#     tokenizer.save_pretrained('model')
-    
-    # downstream output layer(s)
-    out = backbone(input_ids, attention_mask=mask)
-    out = tf.keras.layers.Dense(256, activation='relu')(out[0])
-    out = tf.keras.layers.Dense(15, activation='softmax', dtype='float32')(out)
-    
-    # integration
-    model = tf.keras.Model(inputs=[input_ids,mask], outputs=out)
-    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate = LR),
-                  loss = [tf.keras.losses.CategoricalCrossentropy()],
-                  metrics = [tf.keras.metrics.CategoricalAccuracy()],
-                 )
-    
+    # save the model
+    os.mkdir('model')
+    backbone.save_pretrained('model')
+    config.save_pretrained('model')
+    tokenizer.save_pretrained('model')
+
+# connection port
+def build_model(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
+    # model = LongFormer(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
+    model = LongFormerMultitask(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
     return model
 
 def LongFormerMultitask(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
@@ -55,9 +37,13 @@ def LongFormerMultitask(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024,
     out = tf.keras.layers.Dense(256, activation='relu')(out[0])
 
     # multitask configuration
-    tasks = ["main_task", "coarse_class"]
-    out_size = [15, 7]
-    tasks_weight = [1.0, 0.8]
+    tasks = ["main_task"]
+    out_size = [15]
+    tasks_weight = [1.0]
+    
+    # tasks = ["main_task", "coarse_class"]
+    # out_size = [15, 7]
+    # tasks_weight = [1.0, 0.8]
 
     # tasks = ["main_task", "binary_class"]
     # out_size = [15, 3]
