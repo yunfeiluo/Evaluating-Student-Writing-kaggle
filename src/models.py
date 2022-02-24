@@ -22,6 +22,7 @@ def build_model(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4
     model = LongFormerMultitask(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
     return model
 
+# define models
 def LongFormerMultitask(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
     # construct input
     input_ids = tf.keras.layers.Input(shape=(MAX_LEN,), name='input_ids', dtype='int32')
@@ -33,25 +34,17 @@ def LongFormerMultitask(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024,
     backbone.trainable = True
     
     # downstream output layer(s)
-    out = backbone(input_ids, attention_mask=mask)
-    out = tf.keras.layers.Dense(256, activation='relu')(out[0])
+    out = backbone(input_ids, attention_mask=mask)[0]
 
     # multitask configuration
-    tasks = ["main_task"]
-    out_size = [15]
-    tasks_weight = [1.0]
+#     tasks = ["main_task"]
+#     out_size = [15]
+#     tasks_weight = [1.0]
     
-    # tasks = ["main_task", "coarse_class"]
-    # out_size = [15, 7]
-    # tasks_weight = [1.0, 0.8]
-
-    # tasks = ["main_task", "binary_class"]
-    # out_size = [15, 3]
-    # tasks_weight = [1.0, 0.6]
-
-    # tasks = ["main_task", "coarse_class", "binary_class"]
-    # out_size = [15, 7, 3]
-    # tasks_weight = [1.0, 0.8, 0.6]
+    tasks = ["main_task", "coarse_class", "binary_class"]
+    out_size = [15, 7, 3]
+    # tasks_weight = [1.0, 0.6, 0.4]
+    tasks_weight = np.exp(out_size) / np.exp(out_size).sum()
 
     # construct multihead output
     outputs = list()
@@ -60,7 +53,8 @@ def LongFormerMultitask(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024,
     mets = dict()
 
     for i in range(len(tasks)):
-        outputs.append(tf.keras.layers.Dense(out_size[i], activation='softmax', dtype='float32', name=tasks[i])(out))
+        subout = tf.keras.layers.Dense(256, activation='relu')(out)
+        outputs.append(tf.keras.layers.Dense(out_size[i], activation='softmax', dtype='float32', name=tasks[i])(subout))
         loss[tasks[i]] = tf.keras.losses.CategoricalCrossentropy()
         loss_weights[tasks[i]] = tasks_weight[i]
         mets[tasks[i]] = tf.keras.metrics.CategoricalAccuracy()

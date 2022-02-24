@@ -71,19 +71,23 @@ if __name__ == '__main__':
     val_idx = inds[split_point:]
     print('Train size',len(train_idx),', Valid size',len(val_idx))
 
-    val_labels = [labels[val_idx,]]
+    # train_labels = [labels[train_idx,]]
+    # val_labels = [labels[val_idx,]]
+
+    # train_labels = [labels[train_idx,], coarse_labels[train_idx,]]
     # val_labels = [labels[val_idx,], coarse_labels[val_idx,]]
-    # val_labels = [labels[val_idx,], binary_labels[val_idx,]]
-    # val_labels = [labels[val_idx,], coarse_labels[val_idx,], binary_labels[val_idx,]]
+
+    train_labels = [labels[train_idx,], coarse_labels[train_idx,], binary_labels[train_idx,]]
+    val_labels = [labels[val_idx,], coarse_labels[val_idx,], binary_labels[val_idx,]]
 
     print('start training...')
     model.fit(x = [ids[train_idx,], attention[train_idx,]],
-              y = [labels[train_idx,], labels[train_idx,]], # custom labels
-              validation_data = ([ids[val_idx,], attention[val_idx,]],
-                                 val_labels),
-              epochs = EPOCHS,
-              batch_size = BATCH_SIZE,
-              verbose = 2)
+            y = train_labels,
+            validation_data = ([ids[val_idx,], attention[val_idx,]],
+                                val_labels),
+            epochs = EPOCHS,
+            batch_size = BATCH_SIZE,
+            verbose = 2)
 
     # SAVE MODEL WEIGHTS
     model.save_weights('saved_model.h5')
