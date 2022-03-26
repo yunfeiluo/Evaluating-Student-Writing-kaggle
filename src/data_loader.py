@@ -109,4 +109,47 @@ def load_test_data(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024):
         test_attention[i, :] = tokens['attention_mask']
     
     return test_ids, test_attention, IDS
+
+def load_wiki_data(path='../input/dbpedia-classes/DBPEDIA_train.csv', MODEL_NAME="bert-base-cased", MAX_LEN=1024):
+    # load csv file
+    df = pd.read_csv(path)
+    
+    # construct tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    
+    # saved vars
+    saved = {
+        'ids': np.zeros((len(df['text']), MAX_LEN), dtype='int32'),
+        'attention': np.zeros((len(df['text']), MAX_LEN), dtype='int32'),
+        'labels_l1': None,
+        'labels_l2': None,
+        'labels_l3': None
+        }
+    
+    # label index
+    label_to_ind = {
+        'l1': dict(),
+        'l2': dict(),
+        'l3': dict()
+    }
+    
+    for level in ['l1', 'l2', 'l3']:
+        ind = 0
+        for label in wiki_train[level].unique(): # l1, l2, l3
+            label_to_ind[level][label] = ind
+            ind += 1
+        saved['labels_{}'.format(level)] = np.zeros((len(df['text']), len(label_to_ind[level])), dtype='int32')
+
+    # tokenize
+    for i in range(len(df['text'])):
+        tokens = tokenizer.encode_plus(df['text'][i], max_length=MAX_LEN, padding='max_length',
+                                       truncation=True, return_offsets_mapping=True)
+        saved['ids'][i, :] = tokens['input_ids']
+        saved['attention'][i, :] = tokens['attention_mask']
+        for level in ['l1', 'l2', 'l3']:
+            saved['labels_{}'.format(level)][i, label_to_ind[level][df[level][i]]] = 1
+    
+    # save
+    with open('tokenized_test_data_longformer_wiki.pkl', 'wb') as f:
+        pickle.dump(saved, f)
     

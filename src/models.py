@@ -19,7 +19,8 @@ def download_save_model(MODEL_NAME="allenai/longformer-base-4096"):
 # connection port
 def build_model(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
     # model = LongFormer(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
-    model = LongFormerMultitask(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
+    # model = LongFormerMultitask(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
+    model = LongFormerMultitaskWiki(MODEL_NAME=MODEL_NAME, MAX_LEN=MAX_LEN, LR=LR) # baseline
     return model
 
 # define models
@@ -111,3 +112,120 @@ def binary_class(labels):
         for j in range(L):
             binary_labels[i, j][ind_to_ind[old_labels[i, j]]] = 1
     return binary_labels
+
+def LongFormerMultitaskWiki(MODEL_NAME="allenai/longformer-base-4096", MAX_LEN=1024, LR=1e-4):
+    # construct input
+    input_ids = tf.keras.layers.Input(shape=(MAX_LEN,), name='input_ids', dtype='int32')
+    mask = tf.keras.layers.Input(shape=(MAX_LEN,), name='attention_mask', dtype='int32')
+    
+    wiki_input_ids = tf.keras.layers.Input(shape=(512,), name='wiki_input_ids', dtype='int32')
+    wiki_mask = tf.keras.layers.Input(shape=(512,), name='wiki_attention_mask', dtype='int32')
+    
+    # pretrained/finetuned model (Transformers)
+    config = AutoConfig.from_pretrained(MODEL_NAME)
+    backbone = TFAutoModel.from_pretrained(MODEL_NAME, config=config)
+    backbone.trainable = True
+    
+    # downstream output layer(s)
+    out = backbone(input_ids, attention_mask=mask)[0]
+    wiki_out = backbone(wiki_input_ids, attention_mask=wiki_mask)[0]
+    
+    # config multitasks
+    tasks = {
+        "main_task": {
+            "out": tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(256, activation="relu"),
+                    tf.keras.layers.Dense(15, activation="softmax"),
+                ],
+                name="main_task"
+            )(out),
+            "task_weight": 1.0,
+            "loss": tf.keras.losses.CategoricalCrossentropy(),
+            "met": tf.keras.metrics.CategoricalAccuracy()
+        },
+        "coarse_class": {
+            "out": tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(256, activation="relu"),
+                    tf.keras.layers.Dense(7, activation="softmax"),
+                ],
+                name="coarse_class"
+            )(out),
+            "task_weight": 0.6,
+            "loss": tf.keras.losses.CategoricalCrossentropy(),
+            "met": tf.keras.metrics.CategoricalAccuracy()
+        },
+        "binary_class": {
+            "out": tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(256, activation="relu"),
+                    tf.keras.layers.Dense(3, activation="softmax"),
+                ],
+                name="binary_class"
+            )(out),
+            "task_weight": 0.4,
+            "loss": tf.keras.losses.CategoricalCrossentropy(),
+            "met": tf.keras.metrics.CategoricalAccuracy()
+        },
+        "wiki_l3": {
+            "out": tf.keras.Sequential(
+                [
+                    tf.keras.layers.GlobalAveragePooling1D(),
+                    tf.keras.layers.Dense(256, activation="relu"),
+                    tf.keras.layers.Dense(219, activation="softmax"),
+                ],
+                name="wiki_l3"
+            )(wiki_out),
+            "task_weight": 1.0,
+            "loss": tf.keras.losses.CategoricalCrossentropy(),
+            "met": tf.keras.metrics.CategoricalAccuracy()
+        },
+        "wiki_l2": {
+            "out": tf.keras.Sequential(
+                [
+                    tf.keras.layers.GlobalAveragePooling1D(),
+                    tf.keras.layers.Dense(256, activation="relu"),
+                    tf.keras.layers.Dense(70, activation="softmax"),
+                ],
+                name="wiki_l2"
+            )(wiki_out),
+            "task_weight": 1e-1,
+            "loss": tf.keras.losses.CategoricalCrossentropy(),
+            "met": tf.keras.metrics.CategoricalAccuracy()
+        },
+        "wiki_l1": {
+            "out": tf.keras.Sequential(
+                [
+                    tf.keras.layers.GlobalAveragePooling1D(),
+                    tf.keras.layers.Dense(256, activation="relu"),
+                    tf.keras.layers.Dense(9, activation="softmax"),
+                ],
+                name="wiki_l1"
+            )(wiki_out),
+            "task_weight": 1e-2,
+            "loss": tf.keras.losses.CategoricalCrossentropy(),
+            "met": tf.keras.metrics.CategoricalAccuracy()
+        },
+    }
+
+    # construct multihead output
+    outputs = [tasks[task]["out"] for task in tasks]
+    loss = dict()
+    loss_weights = dict()
+    mets = dict()
+
+    for task in tasks:
+        loss[task] = tasks[task]["loss"]
+        loss_weights[task] = tasks[task]["task_weight"]
+        mets[task] = tasks[task]["met"]
+    
+    # integration
+    model = tf.keras.Model(inputs=[input_ids, mask, wiki_input_ids, wiki_mask], outputs=outputs)
+    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate = LR),
+                  loss = loss,
+                  metrics = mets,
+                  loss_weights = loss_weights
+                 )
+    
+    return model
